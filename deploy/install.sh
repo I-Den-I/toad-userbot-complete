@@ -53,12 +53,13 @@ log "systemd unit $SERVICE"
 install -m 0644 "$APP_DIR/deploy/systemd/$SERVICE" "/etc/systemd/system/$SERVICE"
 systemctl daemon-reload
 
-if [ -f "$DATA_DIR/userbot.session" ]; then
-    systemctl enable --quiet "$SERVICE"
+# Only a successful deploy/login.sh enables the service. A session file alone proves
+# nothing: an interrupted login leaves an unauthorized one behind.
+if systemctl is-enabled --quiet "$SERVICE"; then
     systemctl restart "$SERVICE"
     log "restarted $SERVICE"
     systemctl --no-pager --lines=5 status "$SERVICE" || true
 else
-    log "no Telegram session yet. Log in interactively:"
+    log "not logged in yet. Log in interactively:"
     echo "    ssh -t root@<server> $APP_DIR/deploy/login.sh"
 fi

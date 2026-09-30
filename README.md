@@ -55,11 +55,13 @@
 git clone https://github.com/I-Den-I/toad-userbot-complete.git /opt/toad-userbot && /opt/toad-userbot/deploy/install.sh
 ```
 
-**Вхід в акаунт — робиш тільки ти.** Скрипт спитає `api_id`/`api_hash` з https://my.telegram.org (якщо їх ще немає), потім Telegram спитає телефон, код і пароль 2FA. Наприкінці скрипт запустить сервіс.
+**Вхід в акаунт — робиш тільки ти.** Скрипт спитає `api_id`/`api_hash` з https://my.telegram.org (якщо їх ще немає) і покаже **QR-код**. Відскануй його з телефона: Telegram → Налаштування → Пристрої → «Підключити пристрій». Далі введи пароль 2FA, якщо він є. Наприкінці скрипт запустить сервіс.
 
 ```bash
 ssh -t root@<сервер> /opt/toad-userbot/deploy/login.sh
 ```
+
+Вхід за кодом замість QR: `login.sh --code`. Telegram часто не доставляє коди новим стороннім клієнтам з IP дата-центрів, тому типово використовується QR.
 
 Далі в Saved Messages: `.ping` → `.chats <частина назви>` → `.chat set <id>` → `.status`.
 
