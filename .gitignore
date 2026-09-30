@@ -9,6 +9,8 @@ data/
 __pycache__/
 *.py[cod]
 .venv/
+.python/
+.tools/
 dist/
 build/
 *.egg-info/

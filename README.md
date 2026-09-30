@@ -38,45 +38,59 @@
 | `.export [годин]` | вивантажити записане за N годин у файл JSONL (типово 24) |
 | `.restart` | перезапустити процес |
 
-## Розгортання на VPS
+## Розгортання на VPS (systemd)
 
-Потрібні Docker з плагіном `compose` і git.
+Основний спосіб для сервера, де вже працюють інші сервіси. Юзербот отримує окремого системного користувача `toad-userbot`, окрему директорію і власний Python 3.12, який ставить `uv`. Системний Python, інші сервіси й мережеві правила не зачіпаються. Причини — в [ADR 0003](docs/adr/0003-systemd-on-shared-vps.md).
+
+| Що | Де |
+|---|---|
+| Код, venv, Python | `/opt/toad-userbot` (власник root, сервіс лише читає) |
+| Секрети і конфіг | `/etc/toad-userbot/env`, `/etc/toad-userbot/config.yaml` |
+| БД, сесія, логи | `/var/lib/toad-userbot` (права `700`) |
+| Сервіс | `toad-userbot.service` (пісочниця systemd, `MemoryMax=512M`) |
+
+**Встановлення** (від root):
 
 ```bash
-git clone https://github.com/I-Den-I/toad-userbot-complete.git
+git clone https://github.com/I-Den-I/toad-userbot-complete.git /opt/toad-userbot && /opt/toad-userbot/deploy/install.sh
+```
+
+**Вхід в акаунт — робиш тільки ти.** Скрипт спитає `api_id`/`api_hash` з https://my.telegram.org (якщо їх ще немає), потім Telegram спитає телефон, код і пароль 2FA. Наприкінці скрипт запустить сервіс.
+
+```bash
+ssh -t root@<сервер> /opt/toad-userbot/deploy/login.sh
+```
+
+Далі в Saved Messages: `.ping` → `.chats <частина назви>` → `.chat set <id>` → `.status`.
+
+**Оновлення** до свіжого `main` (або до гілки: `update.sh origin/<гілка>`):
+
+```bash
+/opt/toad-userbot/deploy/update.sh
+```
+
+**Стан і логи:**
+
+```bash
+systemctl status toad-userbot
 ```
 
 ```bash
-cd toad-userbot-complete && cp .env.example .env && cp config.example.yaml config.yaml
+journalctl -u toad-userbot -f
 ```
 
-1. **API-ключі.** Відкрий https://my.telegram.org → *API development tools* → створи застосунок. Впиши `api_id` і `api_hash` у `.env` (`TG_API_ID`, `TG_API_HASH`).
-2. **Збірка образу:**
-   ```bash
-   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose build
-   ```
-3. **Вхід в акаунт — робиш тільки ти.** Введи номер телефону, код із Telegram і пароль 2FA. Сесія збережеться в Docker-томі.
-   ```bash
-   docker compose run --rm userbot login
-   ```
-4. **Запуск:**
-   ```bash
-   docker compose up -d
-   ```
-5. **Налаштування чату в Saved Messages:** `.ping` → `.chats <частина назви>` → `.chat set <id>` → `.status`.
-6. Грай руками як завжди. `.status` показує, що запис іде; `.export` вивантажує зібране.
+## Розгортання через Docker
 
-Оновлення:
+Альтернатива для сервера, де Docker уже є.
 
 ```bash
-git pull && GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+cp .env.example .env && cp config.example.yaml config.yaml
 ```
 
-Логи контейнера:
-
-```bash
-docker compose logs -f --tail=100
-```
+1. Впиши `TG_API_ID` і `TG_API_HASH` у `.env`.
+2. `GIT_COMMIT=$(git rev-parse --short HEAD) docker compose build`
+3. `docker compose run --rm userbot login` — вхід робиш тільки ти.
+4. `docker compose up -d`, потім у Saved Messages: `.chats` → `.chat set <id>` → `.status`.
 
 ## Розробка
 
@@ -99,3 +113,4 @@ make check
 - `.env`, `config.yaml`, `data/` і `*.session` не потрапляють у git (`.gitignore` і pre-commit).
 - Файл сесії дає **повний доступ до акаунта**. Тримай VPS закритим: вхід лише за SSH-ключами, без зайвих користувачів.
 - Активну сесію видно в Telegram → *Налаштування → Пристрої* як **Toad Userbot**. Звідти її можна завершити будь-коли.
+- `/etc/toad-userbot/env` доступний лише root і групі сервісу (`640`), дані сервісу — лише йому (`700`).

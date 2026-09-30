@@ -11,9 +11,9 @@ from typing import Final
 from toad_userbot.config import Paths
 from toad_userbot.domain.time import Clock
 
-# Exit code of a restart requested with ``.restart``. Docker's "unless-stopped" policy (or
-# systemd's Restart=always) starts the process again; 75 (EX_TEMPFAIL) makes the intent
-# visible in logs and distinguishes it from a clean stop.
+# Exit code of a restart requested with ``.restart``. systemd (Restart=on-failure) and Docker
+# ("unless-stopped") start the process again; 75 (EX_TEMPFAIL) makes the intent visible in
+# logs and, unlike a clean stop with 0, triggers systemd's on-failure restart.
 EXIT_RESTART: Final = 75
 
 # Meta key under which ``.chat set`` stores the target chat override.
