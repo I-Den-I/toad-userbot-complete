@@ -1,0 +1,36 @@
+# Hooks run the tool versions pinned in uv.lock, so local checks match CI exactly.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+      - id: forbid-secrets
+        name: forbid committing secrets and sessions
+        entry: files must not be committed (.env, config.yaml, *.session)
+        language: fail
+        files: (^|/)(\.env|config\.yaml|.*\.session)$

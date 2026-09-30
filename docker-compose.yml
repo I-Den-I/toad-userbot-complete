@@ -1,0 +1,23 @@
+services:
+  userbot:
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    image: toad-userbot:latest
+    container_name: toad-userbot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Database, Telegram session, logs and heartbeat.
+      - userbot-data:/data
+      - ./config.yaml:/config/config.yaml:ro
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  userbot-data:

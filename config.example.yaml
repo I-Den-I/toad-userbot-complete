@@ -1,0 +1,24 @@
+# Copy to config.yaml. Contains no secrets.
+
+# Chat the userbot works in. Leave empty on the first start, then find the id with
+# `.chats <part of the name>` in Saved Messages and apply it with `.chat set <id>`
+# (stored in the database and survives restarts) — or put it here.
+chat_id:
+
+# Game bot username.
+bot_username: toadbot
+
+control:
+  # Commands are typed in Saved Messages: .help, .ping, .status ...
+  prefix: "."
+
+recorder:
+  # Phase 0: store every @toadbot message and every command addressed to it.
+  enabled: true
+  # First words of commands written without the @toadbot prefix. Uncomment to override
+  # the built-in list (src/toad_userbot/recorder/policy.py).
+  # command_words: ["покормить", "жаба инфо", "моя ", "завершить"]
+
+log_file:
+  max_bytes: 5000000
+  backups: 3

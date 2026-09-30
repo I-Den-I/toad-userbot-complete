@@ -1,0 +1,113 @@
+[project]
+name = "toad-userbot"
+version = "0.1.0"
+description = "Telegram userbot that automates the @toadbot game in a single chat"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Denys Nazarenko" }]
+dependencies = [
+    "aiosqlite>=0.20",
+    "psutil>=6.1",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.6,<3",
+    "pyyaml>=6.0",
+    "structlog>=24.4",
+    "telethon>=1.45,<2",
+]
+
+[project.scripts]
+toad-userbot = "toad_userbot.__main__:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "types-psutil",
+    "types-pyyaml",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toad_userbot"]
+
+# --- ruff -------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # pycodestyle, pyflakes
+    "I",             # isort
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "SIM",           # simplify
+    "C4",            # comprehensions
+    "RUF",           # ruff-specific
+    "N",             # naming
+    "ASYNC",         # async pitfalls
+    "S",             # bandit
+    "PTH",           # pathlib
+    "DTZ",           # timezone-aware datetimes
+    "T20",           # no print
+    "PT",            # pytest style
+    "RET",           # returns
+    "ARG",           # unused arguments
+    "ERA",           # commented-out code
+    "PL",            # pylint
+]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # Cyrillic game texts are intentional
+    "PLR0913",                     # explicit dependencies are fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "ARG001", "ARG002"]
+"src/toad_userbot/__main__.py" = ["T20"]
+"src/toad_userbot/telegram/login.py" = ["T20"]
+
+# --- mypy -------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+files = ["src", "tests"]
+warn_unreachable = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["telethon", "telethon.*"]
+ignore_missing_imports = true
+
+# --- pytest -----------------------------------------------------------------
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["toad_userbot"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
