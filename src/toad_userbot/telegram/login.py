@@ -1,17 +1,23 @@
 """Interactive login that creates the session file. Run once, by the account owner.
 
-Unlike ``TelegramClient.start()``, this flow tells the owner where Telegram delivered the
-code (app, SMS, e-mail, call, Fragment), lets them request it another way, and explains the
-cases in which Telegram will not send a code at all.
+Two methods:
+
+* **QR code** (default) — the owner scans a QR code from the Telegram app on the phone
+  (Settings → Devices → Link Desktop Device). No login code is involved, so it works even when
+  Telegram does not deliver codes to a new third-party client on a data-center IP.
+* **Login code** — unlike ``TelegramClient.start()``, tells where Telegram delivered the code
+  (app, SMS, e-mail, call, Fragment), lets the owner request it another way, and explains the
+  cases in which Telegram will not send a code at all.
 """
 
 from __future__ import annotations
 
 import getpass
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Final
 
+import qrcode
 from telethon import TelegramClient, errors
 from telethon.tl import functions, types
 
@@ -22,6 +28,14 @@ from toad_userbot.telegram.client import account_info, build_client
 
 MAX_CODE_ATTEMPTS: Final = 5
 MAX_PASSWORD_ATTEMPTS: Final = 3
+# A login token lives about 30 seconds; this gives the owner roughly four minutes.
+MAX_QR_ROUNDS: Final = 8
+
+_QR_HELP: Final = (
+    "📱 Відкрий Telegram на телефоні → Налаштування → Пристрої → «Підключити пристрій»\n"
+    "   (Link Desktop Device) і відскануй QR-код нижче. Telegram попросить підтвердити\n"
+    "   вхід нового пристрою «Toad Userbot». QR оновлюється сам кожні ~30 секунд."
+)
 
 _DELIVERY: Final = {
     "SentCodeTypeApp": (
@@ -45,6 +59,10 @@ _NEXT: Final = {
     "CodeTypeMissedCall": "пропущений дзвінок",
     "CodeTypeFragmentSms": "код через Fragment",
 }
+_API_ID_INVALID: Final = (
+    "Telegram не прийняв api_id / api_hash. Перевір значення з https://my.telegram.org "
+    "у /etc/toad-userbot/env"
+)
 _DO_NOT_SHARE: Final = (
     "   ⚠️ Вводь код лише тут. Не пересилай його і не вставляй у жоден чат, "
     "навіть у «Збережене»: Telegram анулює такий код."
@@ -52,6 +70,13 @@ _DO_NOT_SHARE: Final = (
 
 Ask = Callable[[str], str]
 Say = Callable[[str], None]
+Render = Callable[[str], str]
+
+# ANSI colours: dark modules black, light modules bright white — correct polarity for scanning
+# in both dark and light terminal themes.
+_FG = {True: "30", False: "97"}
+_BG = {True: "40", False: "107"}
+_RESET: Final = "\033[0m"
 
 
 class LoginAbortedError(Exception):
@@ -81,7 +106,28 @@ def describe_next(sent: types.auth.SentCode) -> str | None:
     return text
 
 
-async def login(settings: Settings) -> int:
+def render_qr(data: str) -> str:
+    """Render ``data`` as a QR code with half-block characters: one text line per two rows."""
+    qr = qrcode.QRCode(border=4, error_correction=qrcode.constants.ERROR_CORRECT_L)
+    qr.add_data(data)
+    qr.make(fit=True)
+    return render_matrix(qr.get_matrix())
+
+
+def render_matrix(matrix: Sequence[Sequence[bool]]) -> str:
+    lines: list[str] = []
+    for top_index in range(0, len(matrix), 2):
+        top = matrix[top_index]
+        bottom = matrix[top_index + 1] if top_index + 1 < len(matrix) else [False] * len(top)
+        cells = "".join(
+            f"\033[{_FG[bool(upper)]};{_BG[bool(lower)]}m▀"
+            for upper, lower in zip(top, bottom, strict=True)
+        )
+        lines.append(cells + _RESET)
+    return "\n".join(lines)
+
+
+async def login(settings: Settings, *, use_code: bool = False) -> int:
     paths = settings.paths
     paths.ensure()
     client = build_client(
@@ -95,8 +141,10 @@ async def login(settings: Settings) -> int:
         if await client.is_user_authorized():
             me = account_info(await client.get_me())
             print(f"ℹ️ Сесія вже активна: {me.name} (id {me.id}).")
-        else:
+        elif use_code:
             me = await sign_in_interactively(client)
+        else:
+            me = await sign_in_with_qr(client)
     except LoginAbortedError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 1
@@ -107,6 +155,40 @@ async def login(settings: Settings) -> int:
     print(f"✅ Увійшли як {me.name} (id {me.id}).")
     print(f"Сесію збережено: {paths.session}")
     return 0
+
+
+async def sign_in_with_qr(
+    client: TelegramClient,
+    *,
+    ask_secret: Ask = getpass.getpass,
+    say: Say = print,
+    render: Render = render_qr,
+    rounds: int = MAX_QR_ROUNDS,
+) -> AccountInfo:
+    try:
+        qr = await client.qr_login()
+    except errors.FloodWaitError as exc:
+        msg = f"Telegram просить зачекати {exc.seconds} с перед новою спробою входу"
+        raise LoginAbortedError(msg) from exc
+    except errors.ApiIdInvalidError as exc:
+        raise LoginAbortedError(_API_ID_INVALID) from exc
+
+    say(_QR_HELP)
+    for round_number in range(rounds):
+        if round_number:
+            await qr.recreate()
+            say("⏳ QR прострочився, ось новий:")
+        say(render(qr.url))
+        try:
+            user = await qr.wait()
+        except TimeoutError:
+            continue
+        except errors.SessionPasswordNeededError:
+            return await _sign_in_with_password(client, ask_secret, say)
+        return account_info(user)
+
+    msg = "QR-код так і не відскановано. Запусти вхід ще раз або спробуй вхід за кодом (--code)"
+    raise LoginAbortedError(msg)
 
 
 async def sign_in_interactively(
@@ -169,6 +251,8 @@ async def _request_code(
     except errors.PhoneNumberBannedError as exc:
         msg = "цей номер заблоковано в Telegram"
         raise LoginAbortedError(msg) from exc
+    except errors.ApiIdInvalidError as exc:
+        raise LoginAbortedError(_API_ID_INVALID) from exc
     except errors.SendCodeUnavailableError as exc:
         msg = "інших способів надіслати код Telegram не має. Спробуй пізніше"
         raise LoginAbortedError(msg) from exc

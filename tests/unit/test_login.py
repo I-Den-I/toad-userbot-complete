@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import qrcode
 from telethon import errors
 from telethon.tl import functions, types
 
@@ -15,7 +17,10 @@ from toad_userbot.telegram.login import (
     LoginAbortedError,
     describe_delivery,
     describe_next,
+    render_matrix,
+    render_qr,
     sign_in_interactively,
+    sign_in_with_qr,
 )
 
 USER = SimpleNamespace(id=42, first_name="Скала", last_name=None, username="skala")
@@ -189,3 +194,120 @@ async def test_ctrl_d_cancels() -> None:
     client = ScriptedClient(code_responses=[], sign_in_results=[])
     with pytest.raises(LoginAbortedError, match="скасовано"):
         await sign_in_interactively(client, ask=eof, say=lambda _: None)
+
+
+# --- QR login --------------------------------------------------------------------------------
+
+
+@dataclass
+class FakeQR:
+    wait_results: list[Any]
+    recreated: int = 0
+
+    @property
+    def url(self) -> str:
+        return f"tg://login?token=t{self.recreated}"
+
+    async def recreate(self) -> None:
+        self.recreated += 1
+
+    async def wait(self) -> Any:
+        return _next(self.wait_results)
+
+
+@dataclass
+class QRClient:
+    qr: Any
+    sign_in_results: list[Any] = field(default_factory=list)
+    passwords: list[str] = field(default_factory=list)
+
+    async def qr_login(self) -> Any:
+        return self.qr
+
+    async def sign_in(self, *, password: str) -> Any:
+        self.passwords.append(password)
+        return _next(self.sign_in_results)
+
+
+async def test_qr_is_refreshed_until_scanned() -> None:
+    qr = FakeQR(wait_results=[TimeoutError(), TimeoutError(), USER])
+    rendered: list[str] = []
+    said: list[str] = []
+
+    def render(url: str) -> str:
+        rendered.append(url)
+        return url
+
+    account = await sign_in_with_qr(QRClient(qr), say=said.append, render=render)
+
+    assert account.id == 42
+    assert rendered == ["tg://login?token=t0", "tg://login?token=t1", "tg://login?token=t2"]
+    assert "Підключити пристрій" in said[0]
+    assert sum("прострочився" in line for line in said) == 2
+
+
+async def test_qr_with_two_factor_password() -> None:
+    client = QRClient(
+        FakeQR(wait_results=[errors.SessionPasswordNeededError(request=None)]),
+        sign_in_results=[errors.PasswordHashInvalidError(request=None), USER],
+    )
+    secrets = _answers("wrong", "right")
+
+    account = await sign_in_with_qr(
+        client, ask_secret=lambda _: next(secrets), say=lambda _: None, render=str
+    )
+
+    assert account.username == "skala"
+    assert client.passwords == ["wrong", "right"]
+
+
+async def test_qr_gives_up_after_all_rounds() -> None:
+    qr = FakeQR(wait_results=[TimeoutError()] * 3)
+
+    with pytest.raises(LoginAbortedError, match="--code"):
+        await sign_in_with_qr(QRClient(qr), say=lambda _: None, render=str, rounds=3)
+    assert qr.recreated == 2
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (errors.ApiIdInvalidError(request=None), "api_id / api_hash"),
+        (errors.FloodWaitError(request=None, capture=60), "зачекати 60 с"),
+    ],
+)
+async def test_qr_start_errors(error: Exception, message: str) -> None:
+    class FailingClient:
+        async def qr_login(self) -> Any:
+            raise error
+
+    with pytest.raises(LoginAbortedError, match=message):
+        await sign_in_with_qr(FailingClient(), say=lambda _: None, render=str)
+
+
+def _decode_half_blocks(text: str) -> list[list[bool]]:
+    """Inverse of render_matrix: rebuild the module matrix from the ANSI colours."""
+    rows: list[list[bool]] = []
+    for line in text.splitlines():
+        cells = re.findall(r"\x1b\[(\d+);(\d+)m▀", line)
+        rows.append([fg == "30" for fg, _ in cells])
+        rows.append([bg == "40" for _, bg in cells])
+    return rows
+
+
+def test_rendered_qr_matches_the_encoded_matrix() -> None:
+    url = "tg://login?token=" + "A" * 43
+    qr = qrcode.QRCode(border=4, error_correction=qrcode.constants.ERROR_CORRECT_L)
+    qr.add_data(url)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+
+    decoded = _decode_half_blocks(render_qr(url))
+
+    assert decoded[: len(matrix)] == [[bool(cell) for cell in row] for row in matrix]
+    assert len(render_qr(url).splitlines()) == (len(matrix) + 1) // 2
+
+
+def test_render_matrix_pads_odd_height() -> None:
+    text = render_matrix([[True, False], [False, True], [True, True]])
+    assert _decode_half_blocks(text) == [[True, False], [False, True], [True, True], [False, False]]

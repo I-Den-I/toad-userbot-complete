@@ -26,7 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("run", help="запустити юзербота (типово)")
-    commands.add_parser("login", help="увійти в акаунт і зберегти сесію")
+    login_parser = commands.add_parser("login", help="увійти в акаунт і зберегти сесію")
+    login_parser.add_argument(
+        "--code",
+        action="store_true",
+        help="вхід за кодом із Telegram замість QR-коду",
+    )
     healthcheck = commands.add_parser("healthcheck", help="перевірка живості для Docker")
     healthcheck.add_argument(
         "--max-age",
@@ -55,7 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         configure_logging(level="WARNING", fmt="console")
         from toad_userbot.telegram.login import login  # noqa: PLC0415 - only needed here
 
-        return asyncio.run(login(settings))
+        return asyncio.run(login(settings, use_code=args.code))
 
     settings.paths.ensure()
     configure_logging(

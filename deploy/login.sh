@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Interactive login by the account owner, then start the service. Needs a terminal:
-#   ssh -t root@<server> /opt/toad-userbot/deploy/login.sh
+#   ssh -t root@<server> /opt/toad-userbot/deploy/login.sh          # QR code (default)
+#   ssh -t root@<server> /opt/toad-userbot/deploy/login.sh --code   # login code instead
 #
 # Asks for the API credentials (https://my.telegram.org) if they are not configured yet,
-# then Telegram asks for the phone number, the login code and the 2FA password.
+# then shows a QR code to scan from the Telegram app (or asks for the phone number and the
+# login code), and finally the 2FA password if the account has one.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,7 +42,7 @@ cd "$DATA_DIR"
 runuser -u "$APP_USER" -- env \
     DATA_DIR="$DATA_DIR" \
     CONFIG_PATH="$CONFIG_DIR/config.yaml" \
-    "$APP_DIR/.venv/bin/toad-userbot" login
+    "$APP_DIR/.venv/bin/toad-userbot" login "$@"
 
 systemctl enable --now --quiet "$SERVICE"
 log "$SERVICE started. Next, in Saved Messages: .ping → .chats <name> → .chat set <id> → .status"
