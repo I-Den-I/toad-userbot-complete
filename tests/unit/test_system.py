@@ -7,7 +7,13 @@ from pathlib import Path
 from tests.fakes import FakeClock
 from toad_userbot.system.heartbeat import Heartbeat, is_alive
 from toad_userbot.system.logtail import filter_by_level, tail_lines
-from toad_userbot.system.metrics import path_size, sample_cpu, sample_disk, sample_memory
+from toad_userbot.system.metrics import (
+    own_cgroup_dir,
+    path_size,
+    sample_cpu,
+    sample_disk,
+    sample_memory,
+)
 
 
 def test_tail_lines_reads_only_the_end(tmp_path: Path) -> None:
@@ -71,3 +77,23 @@ def test_metric_samplers_return_sane_values(tmp_path: Path) -> None:
     assert memory.process_rss > 0
     assert 0 < memory.system_used <= memory.system_total
     assert disk.total >= disk.used
+
+
+def test_own_cgroup_dir_for_systemd_service(tmp_path: Path) -> None:
+    proc = tmp_path / "cgroup"
+    proc.write_text("0::/system.slice/toad-userbot.service\n", encoding="utf-8")
+
+    found = own_cgroup_dir(proc, root=tmp_path / "fs")
+
+    assert found == tmp_path / "fs" / "system.slice" / "toad-userbot.service"
+
+
+def test_own_cgroup_dir_in_container_and_edge_cases(tmp_path: Path) -> None:
+    container = tmp_path / "container"
+    container.write_text("0::/\n", encoding="utf-8")
+    cgroup_v1 = tmp_path / "v1"
+    cgroup_v1.write_text("12:memory:/docker/abc\n", encoding="utf-8")
+
+    assert own_cgroup_dir(container, root=tmp_path) == tmp_path
+    assert own_cgroup_dir(cgroup_v1, root=tmp_path) is None
+    assert own_cgroup_dir(tmp_path / "missing", root=tmp_path) is None

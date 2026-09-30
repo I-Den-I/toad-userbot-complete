@@ -57,13 +57,13 @@ def build(deps: CommandDeps) -> list[Command]:
     async def mem(_: CommandContext) -> CommandResult:
         snapshot = await asyncio.to_thread(sample_memory)
         lines = ["💾 <b>Пам'ять</b>", f"Процес (RSS): {human_bytes(snapshot.process_rss)}"]
-        if snapshot.container_current is not None:
+        if snapshot.cgroup_current is not None:
             limit = (
-                human_bytes(snapshot.container_limit)
-                if snapshot.container_limit is not None
+                human_bytes(snapshot.cgroup_limit)
+                if snapshot.cgroup_limit is not None
                 else "без ліміту"
             )
-            lines.append(f"Контейнер: {human_bytes(snapshot.container_current)} з {limit}")
+            lines.append(f"Сервіс (cgroup): {human_bytes(snapshot.cgroup_current)} з {limit}")
         lines += [
             (
                 f"Система: {human_bytes(snapshot.system_used)} / "
@@ -97,11 +97,11 @@ def build(deps: CommandDeps) -> list[Command]:
 
     async def sys_info(_: CommandContext) -> CommandResult:
         info = host_info()
-        container = " (Docker)" if info.in_container else ""
+        supervisor = f" ({info.supervisor})" if info.supervisor else ""
         return CommandResult(
             html=(
                 "🖥 <b>Система</b>\n"
-                f"Хост: {esc(info.hostname)}{container}\n"
+                f"Хост: {esc(info.hostname)}{esc(supervisor)}\n"
                 f"ОС: {esc(info.platform)}\n"
                 f"Python: {esc(info.python)} · Telethon: {esc(_package_version('telethon'))}\n"
                 f"PID: {info.pid}\n"
@@ -122,7 +122,7 @@ def build(deps: CommandDeps) -> list[Command]:
 
     return [
         Command("cpu", GROUP, "навантаження CPU", cpu),
-        Command("mem", GROUP, "пам'ять процесу, контейнера і сервера", mem),
+        Command("mem", GROUP, "пам'ять процесу, сервісу і сервера", mem),
         Command("disk", GROUP, "місце на диску, розмір БД і логів", disk),
         Command("sys", GROUP, "хост, ОС, версії", sys_info),
         Command(

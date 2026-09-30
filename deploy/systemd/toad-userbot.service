@@ -1,0 +1,58 @@
+[Unit]
+Description=Toad Userbot (@toadbot recorder)
+Documentation=https://github.com/I-Den-I/toad-userbot-complete
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=15min
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=toad-userbot
+Group=toad-userbot
+WorkingDirectory=/var/lib/toad-userbot
+EnvironmentFile=/etc/toad-userbot/env
+EnvironmentFile=-/etc/toad-userbot/build.env
+Environment=DATA_DIR=/var/lib/toad-userbot
+Environment=CONFIG_PATH=/etc/toad-userbot/config.yaml
+Environment=LOG_FORMAT=console
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/toad-userbot/.venv/bin/toad-userbot run
+
+# .restart exits with 75 and is restarted; a clean stop (exit 0) is not.
+# 2 = not logged in, 78 = invalid configuration: restarting would not help.
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=2 78
+TimeoutStopSec=30
+
+# Only /var/lib/toad-userbot is writable; everything else is read-only or hidden.
+StateDirectory=toad-userbot
+StateDirectoryMode=0700
+UMask=0077
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+MemoryMax=512M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
